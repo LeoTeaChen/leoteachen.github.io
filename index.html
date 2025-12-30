@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>購物清單助手 - 本機儲存版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+      // Tailwind 暗黑模式配置
+      tailwind.config = {
+        darkMode: "class",
+      };
+    </script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap");
+      body {
+        font-family: "Noto+Sans+TC", sans-serif;
+        transition: background-color 0.3s, color 0.3s;
+      }
+      .tab-active {
+        border-bottom: 3px solid #3b82f6;
+        color: #3b82f6;
+      }
+      .dark .tab-active {
+        border-bottom-color: #60a5fa;
+        color: #60a5fa;
+      }
+
+      /* 隱藏捲軸但保持滾動功能 */
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50 dark:bg-gray-900 dark:text-gray-100 min-h-screen">
+    <!-- 頂部導覽列 -->
+    <header
+      class="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10 transition-colors"
+    >
+      <div class="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <button
+            id="btn-back"
+            onclick="goToDashboard()"
+            class="p-2 -ml-2 text-gray-400 hover:text-blue-500 hidden transition-colors"
+          >
+            <i data-lucide="chevron-left" class="w-6 h-6"></i>
+          </button>
+          <h1
+            id="app-title-text"
+            class="text-xl font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2"
+          >
+            <i data-lucide="shopping-bag"></i>
+            <span data-t="app_title">購物清單助手</span>
+          </h1>
+        </div>
+        <div class="flex items-center gap-2">
+          <div id="total-display" class="text-right hidden">
+            <p
+              class="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold"
+              data-t="total_label"
+            >
+              總額
+            </p>
+            <p
+              id="total-amount"
+              class="text-md font-bold text-gray-800 dark:text-white"
+            >
+              $ 0
+            </p>
+          </div>
+          <button
+            id="btn-settings"
+            onclick="openSettings()"
+            class="p-2 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+          >
+            <i data-lucide="settings" class="w-6 h-6"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 分頁切換 -->
+      <div
+        id="list-tabs"
+        class="max-w-md mx-auto flex border-t dark:border-gray-700 hidden"
+      >
+        <button
+          onclick="switchTab('shopping')"
+          id="tab-shopping"
+          class="flex-1 py-3 text-center font-medium tab-active transition-all"
+        >
+          <div class="flex items-center justify-center gap-1.5">
+            <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+            <span data-t="tab_shopping">購物清單</span>
+            <span class="text-xs opacity-70"
+              >(<span id="count-shopping">0</span>)</span
+            >
+          </div>
+        </button>
+        <button
+          onclick="switchTab('consider')"
+          id="tab-consider"
+          class="flex-1 py-3 text-center font-medium text-gray-500 dark:text-gray-400 transition-all"
+        >
+          <div class="flex items-center justify-center gap-1.5">
+            <i data-lucide="help-circle" class="w-4 h-4"></i>
+            <span data-t="tab_consider">考慮區</span>
+            <span class="text-xs opacity-70"
+              >(<span id="count-consider">0</span>)</span
+            >
+          </div>
+        </button>
+      </div>
+    </header>
+
+    <main class="max-w-md mx-auto p-4 pb-32">
+      <!-- 視圖 1: 清單總覽 -->
+      <div id="view-dashboard" class="space-y-4">
+        <div class="flex justify-between items-center mb-2">
+          <h2
+            class="text-lg font-bold text-gray-700 dark:text-gray-200"
+            data-t="my_lists"
+          >
+            我的清單
+          </h2>
+          <span
+            id="list-count-badge"
+            class="bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 text-xs px-2 py-1 rounded-full font-bold"
+            >0</span
+          >
+        </div>
+        <div id="dashboard-grid" class="grid grid-cols-1 gap-3"></div>
+
+        <button
+          onclick="openCreateListModal()"
+          class="w-full py-4 mt-4 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-2xl text-gray-400 dark:text-gray-500 font-bold flex flex-col items-center justify-center gap-1 hover:border-blue-400 hover:text-blue-400 transition-all"
+        >
+          <i data-lucide="plus" class="w-8 h-8"></i>
+          <span data-t="btn_create_list">建立新的購物清單</span>
+        </button>
+      </div>
+
+      <!-- 視圖 2: 商品詳情 -->
+      <div id="view-items" class="hidden space-y-3">
+        <div id="item-list" class="space-y-3"></div>
+        <div
+          id="empty-state"
+          class="text-center py-20 text-gray-400 dark:text-gray-600 hidden"
+        >
+          <i
+            data-lucide="clipboard-list"
+            class="mx-auto w-12 h-12 mb-2 opacity-20"
+          ></i>
+          <p data-t="empty_msg">目前清單是空的</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- 底部操作列 -->
+    <div
+      id="bottom-action"
+      class="fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-t dark:border-gray-700 p-4 pb-8 max-w-md mx-auto transition-colors hidden"
+    >
+      <button
+        onclick="openManualAdd()"
+        class="w-full bg-blue-600 dark:bg-blue-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-200 dark:shadow-none active:bg-blue-700 active:scale-[0.98] transition-all"
+      >
+        <i data-lucide="plus-circle"></i> <span data-t="btn_add">新增商品</span>
+      </button>
+    </div>
+
+    <!-- 圖片放大預覽層 -->
+    <div
+      id="image-preview-container"
+      class="fixed inset-0 bg-black/90 z-[60] hidden flex items-center justify-center p-4 cursor-zoom-out"
+      onclick="closeImagePreview()"
+    >
+      <img
+        id="preview-full-image"
+        class="max-w-full max-h-full rounded-lg shadow-2xl transition-transform"
+        src=""
+        alt="商品照片"
+      />
+    </div>
+
+    <!-- 隱藏的檔案輸入 -->
+    <input
+      type="file"
+      id="camera-input"
+      accept="image/*"
+      capture="environment"
+      class="hidden"
+      onchange="handleImage(event)"
+    />
+
+    <!-- 彈窗容器 -->
+    <div
+      id="modal-container"
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4"
+    >
+      <!-- 清單編輯彈窗 -->
+      <div
+        id="list-modal"
+        class="bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl hidden transition-colors"
+      >
+        <h3
+          id="list-modal-title"
+          class="font-bold text-xl mb-6 text-center text-gray-800 dark:text-white"
+        >
+          建立清單
+        </h3>
+        <div class="space-y-5">
+          <div>
+            <label
+              class="block text-sm font-bold text-gray-600 dark:text-gray-400 mb-1 ml-1"
+              data-t="list_name_label"
+              >清單名稱</label
+            >
+            <input
+              type="text"
+              id="input-list-name"
+              class="w-full bg-gray-50 dark:bg-gray-700 dark:text-white border-0 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+            />
+          </div>
+          <div class="flex gap-3 pt-2">
+            <button
+              onclick="closeModal()"
+              class="flex-1 py-3 text-gray-500 dark:text-gray-400 font-bold bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 transition-colors"
+              data-t="btn_cancel"
+            >
+              取消
+            </button>
+            <button
+              onclick="saveList()"
+              class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold"
+              data-t="btn_save"
+            >
+              儲存
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 商品編輯彈窗 -->
+      <div
+        id="edit-modal"
+        class="bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-sm overflow-y-auto max-h-[90vh] shadow-2xl hidden transition-colors no-scrollbar"
+      >
+        <h3
+          id="modal-title"
+          class="font-bold text-xl mb-6 text-center text-gray-800 dark:text-white"
+        >
+          新增商品
+        </h3>
+        <div class="space-y-5">
+          <div class="flex flex-col items-center">
+            <div
+              id="manual-photo-preview"
+              class="w-32 h-32 bg-gray-50 dark:bg-gray-700 rounded-2xl mb-3 flex items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 dark:border-gray-600 overflow-hidden relative"
+            >
+              <i data-lucide="image" class="w-10 h-10"></i>
+            </div>
+            <button
+              onclick="triggerCamera()"
+              class="bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded-full text-sm text-gray-600 dark:text-gray-300 font-bold flex items-center gap-2 hover:bg-gray-200 transition-colors"
+            >
+              <i data-lucide="camera" class="w-4 h-4"></i>
+              <span data-t="btn_photo">拍攝照片</span>
+            </button>
+          </div>
+          <div>
+            <label
+              class="block text-sm font-bold text-gray-600 dark:text-gray-400 mb-1 ml-1"
+              data-t="label_name"
+              >商品名稱</label
+            >
+            <input
+              type="text"
+              id="input-name"
+              class="w-full bg-gray-50 dark:bg-gray-700 dark:text-white border-0 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label
+                class="block text-sm font-bold text-gray-600 dark:text-gray-400 mb-1 ml-1"
+                data-t="label_price"
+                >單價</label
+              >
+              <input
+                type="number"
+                id="input-price"
+                class="w-full bg-gray-50 dark:bg-gray-700 dark:text-white border-0 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label
+                class="block text-sm font-bold text-gray-600 dark:text-gray-400 mb-1 ml-1"
+                data-t="label_qty"
+                >數量</label
+              >
+              <input
+                type="number"
+                id="input-quantity"
+                class="w-full bg-gray-50 dark:bg-gray-700 dark:text-white border-0 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+                value="1"
+              />
+            </div>
+          </div>
+          <div class="flex gap-3 pt-4">
+            <button
+              onclick="closeModal()"
+              class="flex-1 py-3 text-gray-500 dark:text-gray-400 font-bold bg-gray-100 dark:bg-gray-700 rounded-xl"
+              data-t="btn_cancel"
+            >
+              取消
+            </button>
+            <button
+              onclick="saveItem()"
+              class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold"
+              data-t="btn_save"
+            >
+              儲存
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 設定彈窗 -->
+      <div
+        id="settings-modal"
+        class="bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl hidden transition-colors"
+      >
+        <h3
+          class="font-bold text-xl mb-6 text-center text-gray-800 dark:text-white"
+          data-t="settings_title"
+        >
+          設定
+        </h3>
+        <div class="space-y-6">
+          <div class="flex justify-between items-center">
+            <div class="flex items-center gap-3">
+              <i data-lucide="languages" class="text-blue-500"></i
+              ><span class="font-bold dark:text-gray-200" data-t="setting_lang"
+                >語言</span
+              >
+            </div>
+            <select
+              id="lang-select"
+              onchange="changeLanguage(this.value)"
+              class="bg-gray-50 dark:bg-gray-700 dark:text-white border-0 rounded-lg p-2 outline-none"
+            >
+              <option value="zh">繁體中文</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div class="flex justify-between items-center">
+            <div class="flex items-center gap-3">
+              <i data-lucide="moon" class="text-indigo-500"></i
+              ><span class="font-bold dark:text-gray-200" data-t="setting_dark"
+                >暗黑模式</span
+              >
+            </div>
+            <button
+              onclick="toggleDarkMode()"
+              id="dark-mode-btn"
+              class="w-12 h-6 bg-gray-200 dark:bg-blue-600 rounded-full relative transition-colors"
+            >
+              <div
+                class="w-4 h-4 bg-white rounded-full absolute top-1 left-1 dark:translate-x-6 transition-transform"
+              ></div>
+            </button>
+          </div>
+
+          <div class="pt-2 border-t dark:border-gray-700">
+            <button
+              onclick="closeModal()"
+              class="w-full py-3 text-gray-500 dark:text-gray-400 font-bold bg-gray-100 dark:bg-gray-700 rounded-xl"
+              data-t="btn_close"
+            >
+              關閉
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // 核心狀態
+      let shoppingLists = [];
+      let activeListId = null;
+      let currentTab = "shopping";
+      let currentLang = "zh";
+      let isDark = false;
+      let tempPhoto = null;
+      let editingItemId = null;
+      let editingListId = null;
+
+      const STORAGE_KEY = "shopping_assistant_local_data";
+
+      const translations = {
+        zh: {
+          app_title: "購物清單助手",
+          total_label: "總額",
+          tab_shopping: "購物清單",
+          tab_consider: "考慮區",
+          empty_msg: "目前清單是空的",
+          btn_add: "新增商品",
+          modal_add_title: "新增商品",
+          modal_edit_title: "編輯商品",
+          btn_photo: "拍攝照片",
+          label_name: "商品名稱",
+          label_price: "單價",
+          label_qty: "數量",
+          btn_cancel: "取消",
+          btn_save: "儲存",
+          settings_title: "設定",
+          setting_lang: "語言",
+          setting_dark: "暗黑模式",
+          btn_close: "關閉",
+          subtotal: "小計",
+          confirm_del: "確定要刪除嗎？",
+          msg_updated: "已更新",
+          msg_added: "已加入",
+          my_lists: "我的清單",
+          btn_create_list: "建立新的購物清單",
+          list_name_label: "清單名稱",
+          items_count: "項商品",
+        },
+        en: {
+          app_title: "Shopping Buddy",
+          total_label: "Total",
+          tab_shopping: "Shopping",
+          tab_consider: "Maybe",
+          empty_msg: "List is empty",
+          btn_add: "Add Item",
+          modal_add_title: "Add Item",
+          modal_edit_title: "Edit Item",
+          btn_photo: "Take Photo",
+          label_name: "Item Name",
+          label_price: "Price",
+          label_qty: "Qty",
+          btn_cancel: "Cancel",
+          btn_save: "Save",
+          settings_title: "Settings",
+          setting_lang: "Language",
+          setting_dark: "Dark Mode",
+          btn_close: "Close",
+          subtotal: "Subtotal",
+          confirm_del: "Delete it?",
+          msg_updated: "Updated!",
+          msg_added: "Added!",
+          my_lists: "My Lists",
+          btn_create_list: "New List",
+          list_name_label: "List Name",
+          items_count: "items",
+        },
+      };
+
+      // --- 本機儲存邏輯 ---
+      function loadFromLocal() {
+        const savedData = localStorage.getItem(STORAGE_KEY);
+        if (savedData) {
+          try {
+            shoppingLists = JSON.parse(savedData);
+          } catch (e) {
+            shoppingLists = [];
+          }
+        } else {
+          shoppingLists = [];
+        }
+
+        // 讀取設定
+        const savedLang = localStorage.getItem("shopping_lang");
+        if (savedLang) currentLang = savedLang;
+
+        const savedDark = localStorage.getItem("shopping_dark");
+        if (savedDark === "true") {
+          isDark = true;
+          document.documentElement.classList.add("dark");
+        }
+      }
+
+      function saveToLocal() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(shoppingLists));
+        localStorage.setItem("shopping_lang", currentLang);
+        localStorage.setItem("shopping_dark", isDark);
+      }
+
+      // --- 視圖導覽 ---
+      function goToDashboard() {
+        activeListId = null;
+        document.getElementById("view-dashboard").classList.remove("hidden");
+        document.getElementById("view-items").classList.add("hidden");
+        document.getElementById("btn-back").classList.add("hidden");
+        document.getElementById("list-tabs").classList.add("hidden");
+        document.getElementById("bottom-action").classList.add("hidden");
+        document.getElementById("total-display").classList.add("hidden");
+        document.getElementById("btn-settings").classList.remove("hidden");
+        document.getElementById("app-title-text").innerText =
+          translations[currentLang].app_title;
+        renderDashboard();
+      }
+
+      function enterList(listId) {
+        activeListId = listId;
+        const list = shoppingLists.find((l) => l.id === listId);
+        document.getElementById("view-dashboard").classList.add("hidden");
+        document.getElementById("view-items").classList.remove("hidden");
+        document.getElementById("btn-back").classList.remove("hidden");
+        document.getElementById("list-tabs").classList.remove("hidden");
+        document.getElementById("bottom-action").classList.remove("hidden");
+        document.getElementById("total-display").classList.remove("hidden");
+        document.getElementById("btn-settings").classList.add("hidden");
+        document.getElementById("app-title-text").innerText = list.name;
+        renderList();
+      }
+
+      function renderDashboard() {
+        const container = document.getElementById("dashboard-grid");
+        document.getElementById("list-count-badge").innerText =
+          shoppingLists.length;
+        container.innerHTML = shoppingLists
+          .map(
+            (list) => `
+                <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex justify-between items-center transition-all active:scale-[0.98]">
+                    <div class="flex-1 cursor-pointer" onclick="enterList(${list.id})">
+                        <h3 class="font-bold text-gray-800 dark:text-white text-lg">${list.name}</h3>
+                        <p class="text-xs text-gray-400 font-medium">${list.items.length} ${translations[currentLang].items_count}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="openEditListModal(${list.id})" class="p-2 text-gray-400 hover:text-amber-500 bg-gray-50 dark:bg-gray-700 rounded-xl transition-colors"><i data-lucide="edit-2" class="w-5 h-5"></i></button>
+                        <button onclick="deleteList(${list.id})" class="p-2 text-gray-400 hover:text-red-500 bg-gray-50 dark:bg-gray-700 rounded-xl transition-colors"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
+                    </div>
+                </div>
+            `
+          )
+          .join("");
+        lucide.createIcons();
+      }
+
+      function renderList() {
+        const list = shoppingLists.find((l) => l.id === activeListId);
+        if (!list) return;
+        const container = document.getElementById("item-list");
+        const emptyState = document.getElementById("empty-state");
+        const filteredItems = list.items.filter(
+          (item) => item.type === currentTab
+        );
+        const t = translations[currentLang];
+
+        document.getElementById("count-shopping").innerText = list.items.filter(
+          (i) => i.type === "shopping"
+        ).length;
+        document.getElementById("count-consider").innerText = list.items.filter(
+          (i) => i.type === "consider"
+        ).length;
+
+        const total = list.items
+          .filter((i) => i.type === "shopping")
+          .reduce(
+            (sum, item) => sum + Number(item.price) * Number(item.quantity),
+            0
+          );
+        document.getElementById(
+          "total-amount"
+        ).innerText = `$ ${total.toLocaleString()}`;
+
+        if (filteredItems.length === 0) {
+          emptyState.classList.remove("hidden");
+          container.innerHTML = "";
+        } else {
+          emptyState.classList.add("hidden");
+          container.innerHTML = filteredItems
+            .map(
+              (item) => `
+                    <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-4">
+                        ${
+                          item.image
+                            ? `<img src="${item.image}" class="w-16 h-16 object-cover rounded-xl bg-gray-50 cursor-zoom-in active:scale-95 transition-transform" onclick="openImagePreview('${item.image}')">`
+                            : `<div class="w-16 h-16 bg-gray-50 dark:bg-gray-700 rounded-xl flex items-center justify-center text-gray-300 dark:text-gray-600 border border-gray-100 dark:border-gray-700"><i data-lucide="package"></i></div>`
+                        }
+                        <div class="flex-1 min-w-0">
+                            <h4 class="font-bold text-gray-800 dark:text-white text-lg truncate">${
+                              item.name
+                            }</h4>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="text-blue-600 dark:text-blue-400 font-bold">$ ${Number(
+                                  item.price
+                                ).toLocaleString()}</span>
+                                <span class="text-xs text-gray-400">× ${
+                                  item.quantity
+                                }</span>
+                                <span class="text-[10px] font-medium text-gray-500 ml-auto">${
+                                  t.subtotal
+                                }: $ ${(
+                item.price * item.quantity
+              ).toLocaleString()}</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <div class="flex gap-2">
+                                <button onclick="openEditItem(${
+                                  item.id
+                                })" class="p-2 text-gray-400 hover:text-amber-500 bg-gray-50 dark:bg-gray-700 rounded-xl transition-colors"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                <button onclick="toggleItemType(${
+                                  item.id
+                                })" class="p-2 text-gray-400 hover:text-blue-500 bg-gray-50 dark:bg-gray-700 rounded-xl transition-colors"><i data-lucide="${
+                currentTab === "shopping" ? "help-circle" : "shopping-cart"
+              }" class="w-4 h-4"></i></button>
+                            </div>
+                            <button onclick="deleteItem(${
+                              item.id
+                            })" class="p-2 text-gray-400 hover:text-red-500 bg-gray-50 dark:bg-gray-700 rounded-xl transition-colors flex justify-center"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </div>
+                    </div>
+                `
+            )
+            .join("");
+        }
+        lucide.createIcons();
+      }
+
+      // --- 圖片預覽控制 ---
+      function openImagePreview(src) {
+        const container = document.getElementById("image-preview-container");
+        const img = document.getElementById("preview-full-image");
+        img.src = src;
+        container.classList.remove("hidden");
+        // 防止背景滾動
+        document.body.style.overflow = "hidden";
+      }
+
+      function closeImagePreview() {
+        const container = document.getElementById("image-preview-container");
+        container.classList.add("hidden");
+        document.body.style.overflow = "auto";
+      }
+
+      // --- 清單管理邏輯 ---
+      function openCreateListModal() {
+        editingListId = null;
+        document.getElementById("list-modal-title").innerText =
+          translations[currentLang].btn_create_list;
+        document.getElementById("input-list-name").value = "";
+        showModal("list-modal");
+      }
+
+      function openEditListModal(id) {
+        const list = shoppingLists.find((l) => l.id === id);
+        editingListId = id;
+        document.getElementById("list-modal-title").innerText =
+          translations[currentLang].modal_edit_title;
+        document.getElementById("input-list-name").value = list.name;
+        showModal("list-modal");
+      }
+
+      function saveList() {
+        const name = document.getElementById("input-list-name").value.trim();
+        if (!name) return;
+        if (editingListId) {
+          const list = shoppingLists.find((l) => l.id === editingListId);
+          list.name = name;
+        } else {
+          shoppingLists.push({ id: Date.now(), name, items: [] });
+        }
+        closeModal();
+        renderDashboard();
+        saveToLocal();
+      }
+
+      function deleteList(id) {
+        if (confirm(translations[currentLang].confirm_del)) {
+          shoppingLists = shoppingLists.filter((l) => l.id !== id);
+          renderDashboard();
+          saveToLocal();
+        }
+      }
+
+      // --- 商品管理邏輯 ---
+      function openManualAdd() {
+        editingItemId = null;
+        tempPhoto = null;
+        document.getElementById("modal-title").innerText =
+          translations[currentLang].modal_add_title;
+        document.getElementById(
+          "manual-photo-preview"
+        ).innerHTML = `<i data-lucide="image" class="w-10 h-10"></i>`;
+        document.getElementById("input-name").value = "";
+        document.getElementById("input-price").value = "";
+        document.getElementById("input-quantity").value = "1";
+        showModal("edit-modal");
+        lucide.createIcons();
+      }
+
+      function openEditItem(id) {
+        const list = shoppingLists.find((l) => l.id === activeListId);
+        const item = list.items.find((i) => i.id === id);
+        editingItemId = id;
+        tempPhoto = item.image;
+        document.getElementById("modal-title").innerText =
+          translations[currentLang].modal_edit_title;
+        document.getElementById("manual-photo-preview").innerHTML = tempPhoto
+          ? `<img src="${tempPhoto}" class="w-full h-full object-cover">`
+          : `<i data-lucide="image" class="w-10 h-10"></i>`;
+        document.getElementById("input-name").value = item.name;
+        document.getElementById("input-price").value = item.price;
+        document.getElementById("input-quantity").value = item.quantity;
+        showModal("edit-modal");
+        lucide.createIcons();
+      }
+
+      function saveItem() {
+        const list = shoppingLists.find((l) => l.id === activeListId);
+        const name = document.getElementById("input-name").value.trim();
+        const price = Number(document.getElementById("input-price").value || 0);
+        const quantity = Number(
+          document.getElementById("input-quantity").value || 1
+        );
+        if (!name) return;
+        if (editingItemId) {
+          const item = list.items.find((i) => i.id === editingItemId);
+          Object.assign(item, { name, price, quantity, image: tempPhoto });
+        } else {
+          list.items.push({
+            id: Date.now(),
+            name,
+            price,
+            quantity,
+            type: currentTab,
+            image: tempPhoto,
+          });
+        }
+        closeModal();
+        renderList();
+        saveToLocal();
+      }
+
+      function deleteItem(id) {
+        const list = shoppingLists.find((l) => l.id === activeListId);
+        if (confirm(translations[currentLang].confirm_del)) {
+          list.items = list.items.filter((i) => i.id !== id);
+          renderList();
+          saveToLocal();
+        }
+      }
+
+      function toggleItemType(id) {
+        const list = shoppingLists.find((l) => l.id === activeListId);
+        const item = list.items.find((i) => i.id === id);
+        item.type = item.type === "shopping" ? "consider" : "shopping";
+        renderList();
+        saveToLocal();
+      }
+
+      // --- 輔助功能 ---
+      function switchTab(tab) {
+        currentTab = tab;
+        document
+          .getElementById("tab-shopping")
+          .classList.toggle("tab-active", tab === "shopping");
+        document
+          .getElementById("tab-shopping")
+          .classList.toggle("text-gray-500", tab !== "shopping");
+        document
+          .getElementById("tab-consider")
+          .classList.toggle("tab-active", tab === "consider");
+        document
+          .getElementById("tab-consider")
+          .classList.toggle("text-gray-500", tab !== "consider");
+        renderList();
+      }
+
+      function triggerCamera() {
+        document.getElementById("camera-input").click();
+      }
+      async function handleImage(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (e) => {
+          const img = new Image();
+          img.src = e.target.result;
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const max = 600; // 解析度略微調高以配合放大預覽
+            let w = img.width,
+              h = img.height;
+            if (w > max) {
+              h *= max / w;
+              w = max;
+            }
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+            tempPhoto = canvas.toDataURL("image/jpeg", 0.8);
+            document.getElementById(
+              "manual-photo-preview"
+            ).innerHTML = `<img src="${tempPhoto}" class="w-full h-full object-cover">`;
+          };
+        };
+      }
+
+      function changeLanguage(lang) {
+        currentLang = lang;
+        document
+          .querySelectorAll("[data-t]")
+          .forEach(
+            (el) =>
+              (el.innerText = translations[lang][el.getAttribute("data-t")])
+          );
+        if (activeListId) {
+          const list = shoppingLists.find((l) => l.id === activeListId);
+          document.getElementById("app-title-text").innerText = list.name;
+        } else {
+          document.getElementById("app-title-text").innerText =
+            translations[lang].app_title;
+        }
+        renderDashboard();
+        if (activeListId) renderList();
+        saveToLocal();
+      }
+
+      function toggleDarkMode() {
+        isDark = !isDark;
+        document.documentElement.classList.toggle("dark", isDark);
+        saveToLocal();
+      }
+
+      function showModal(id) {
+        document.getElementById("modal-container").classList.remove("hidden");
+        ["list-modal", "edit-modal", "settings-modal"].forEach((m) =>
+          document.getElementById(m).classList.add("hidden")
+        );
+        document.getElementById(id).classList.remove("hidden");
+      }
+      function closeModal() {
+        document.getElementById("modal-container").classList.add("hidden");
+      }
+      function openSettings() {
+        showModal("settings-modal");
+        document.getElementById("lang-select").value = currentLang;
+      }
+
+      function showMessage(msg) {
+        const toast = document.createElement("div");
+        toast.className =
+          "fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full text-sm z-[100] transition-opacity duration-300";
+        toast.innerText = msg;
+        document.body.appendChild(toast);
+        setTimeout(() => {
+          toast.style.opacity = "0";
+          setTimeout(() => toast.remove(), 300);
+        }, 2000);
+      }
+
+      // 初始載入
+      window.onload = () => {
+        loadFromLocal();
+        changeLanguage(currentLang);
+        goToDashboard();
+      };
+    </script>
+  </body>
+</html>
